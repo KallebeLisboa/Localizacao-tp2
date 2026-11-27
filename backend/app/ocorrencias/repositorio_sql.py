@@ -5,14 +5,14 @@ from typing import Optional
 
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Categoria, PerimetroAutorizado
+from app.models import Categoria, LogEvento, LogPesquisa, PerimetroAutorizado
 from app.models import Ocorrencia as OcorrenciaModel
 from app.ocorrencias.filtros import FiltroOcorrencias
 from app.ocorrencias.geo import Ponto
-from app.ocorrencias.portas import Pagina, SituacaoCategoria
+from app.ocorrencias.portas import Pagina, Pesquisa, SituacaoCategoria
 from app.ocorrencias.schemas import NovaOcorrencia, Ocorrencia
 
 SRID = 4326
@@ -22,6 +22,15 @@ def _ponto_sql(ponto: Ponto):
     """Expressão PostGIS do ponto, na ordem X = longitude, Y = latitude."""
     x, y = ponto.como_xy()
     return func.ST_SetSRID(func.ST_MakePoint(x, y), SRID)
+
+
+def _padrao_contem(texto: str) -> str:
+    """Padrão ``ILIKE`` que procura o texto literal em qualquer posição.
+
+    ``%``, ``_`` e ``\\`` digitados pelo usuário viram caracteres comuns.
+    """
+    escapado = texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escapado}%"
 
 
 def _para_dominio(modelo: OcorrenciaModel) -> Ocorrencia:
@@ -59,6 +68,16 @@ class RepositorioSQL:
             atualizado_em=nova.criado_em,
         )
         self._db.add(modelo)
+        self._db.flush()
+        # Primeiro evento do histórico: base das notificações de novos registros.
+        self._db.add(
+            LogEvento(
+                ocorrencia_id=modelo.id,
+                status_anterior=None,
+                status_novo=nova.status,
+                registrado_em=nova.criado_em,
+            )
+        )
         self._db.commit()
         self._db.refresh(modelo)
         return _para_dominio(modelo)
@@ -78,6 +97,14 @@ class RepositorioSQL:
             consulta = consulta.where(m.criado_em >= filtro.inicio)
         if filtro.fim is not None:
             consulta = consulta.where(m.criado_em < filtro.fim)
+        if filtro.busca is not None:
+            padrao = _padrao_contem(filtro.busca)
+            consulta = consulta.where(
+                or_(
+                    m.titulo.ilike(padrao, escape="\\"),
+                    m.descricao.ilike(padrao, escape="\\"),
+                )
+            )
         ret = filtro.retangulo
         if ret is not None:
             envelope = func.ST_MakeEnvelope(
@@ -140,3 +167,22 @@ class PerimetrosSQL:
             algum = exists().where(PerimetroAutorizado.id.isnot(None))
             return not self._db.scalar(select(algum))
         return False
+
+
+class RegistroPesquisasSQL:
+    """Grava as buscas do mapa em ``logs_pesquisa``, lida pelo relatório (US06)."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def registrar(self, pesquisa: Pesquisa) -> None:
+        """Insere a pesquisa e confirma a transação."""
+        self._db.add(
+            LogPesquisa(
+                usuario_id=pesquisa.usuario_id,
+                termo_buscado=pesquisa.termo,
+                regiao_filtrada=pesquisa.regiao,
+                pesquisado_em=pesquisa.momento,
+            )
+        )
+        self._db.commit()

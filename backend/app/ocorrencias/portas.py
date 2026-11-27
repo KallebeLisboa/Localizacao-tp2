@@ -65,4 +65,28 @@ class RepositorioOcorrencias(Protocol):
         """Lista conforme um ``FiltroOcorrencias``."""
 
 
+@dataclass(frozen=True)
+class Pesquisa:
+    """Busca feita no mapa, registrada para o relatório gerencial (US06).
+
+    Attributes:
+        termo: Texto buscado, já sem espaços nas pontas.
+        usuario_id: Quem buscou; ``None`` se a busca foi anônima.
+        regiao: Retângulo do mapa como ``"sul,oeste,norte,leste"``, se houver.
+        momento: Quando a busca foi feita, com fuso.
+    """
+
+    termo: str
+    usuario_id: Optional[int]
+    regiao: Optional[str]
+    momento: datetime
+
+
+class RegistroPesquisas(Protocol):
+    """Guarda as buscas feitas no mapa (tabela ``logs_pesquisa``)."""
+
+    def registrar(self, pesquisa: Pesquisa) -> None:
+        """Persiste uma pesquisa."""
+
+
 Relogio = Callable[[], datetime]

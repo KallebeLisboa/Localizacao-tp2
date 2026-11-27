@@ -14,6 +14,7 @@ from app.database import Base, engine
 from app.notificacoes.rotas import router as notificacoes_router
 from app.notificacoes.rotas import router_admin as status_admin_router
 from app.ocorrencias.rotas import router as ocorrencias_router
+from app.relatorios.rotas import router as relatorios_router
 
 TAGS_METADATA = [
     {
@@ -57,6 +58,13 @@ TAGS_METADATA = [
         "description": (
             "Inscrição em ocorrências ou zonas (raio em metros) e consulta "
             "das notificações de mudança de status."
+        ),
+    },
+    {
+        "name": "Relatórios (US06)",
+        "description": (
+            "Relatório gerencial para administradores: usuários, termos "
+            "mais pesquisados e chamados por região, em JSON ou CSV."
         ),
     },
     {
@@ -125,3 +133,4 @@ app.include_router(categorias.router_publico)
 app.include_router(ocorrencias_router)
 app.include_router(notificacoes_router)
 app.include_router(status_admin_router)
+app.include_router(relatorios_router)

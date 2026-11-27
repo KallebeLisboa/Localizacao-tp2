@@ -17,16 +17,22 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import StatusOcorrencia
 from app.ocorrencias.erros import ErroOcorrencia
-from app.ocorrencias.filtros import LIMITE_MAX, LIMITE_PADRAO, FiltroOcorrencias
+from app.ocorrencias.filtros import (
+    BUSCA_MAX,
+    LIMITE_MAX,
+    LIMITE_PADRAO,
+    FiltroOcorrencias,
+)
 from app.ocorrencias.repositorio_sql import (
     CatalogoCategoriasSQL,
     PerimetrosSQL,
+    RegistroPesquisasSQL,
     RepositorioSQL,
 )
 from app.ocorrencias.schemas import DetalheOcorrencia, OcorrenciaEntrada, ResumoMapa
 from app.ocorrencias.servico import ServicoOcorrencias
 
-from app.api.deps import UsuarioAtual
+from app.api.deps import UsuarioAtual, UsuarioOpcional
 
 router = APIRouter(prefix="/ocorrencias", tags=["Ocorrências"])
 
@@ -36,10 +42,18 @@ def usuario_atual_id(usuario: UsuarioAtual) -> int:
     return usuario.id
 
 
+def usuario_opcional_id(usuario: UsuarioOpcional) -> Optional[int]:
+    """Usuário do token, se houver; ``None`` para consultas anônimas."""
+    return None if usuario is None else usuario.id
+
+
 def obter_servico(db: Annotated[Session, Depends(get_db)]) -> ServicoOcorrencias:
     """Monta o serviço com os adaptadores do banco."""
     return ServicoOcorrencias(
-        RepositorioSQL(db), CatalogoCategoriasSQL(db), PerimetrosSQL(db)
+        RepositorioSQL(db),
+        CatalogoCategoriasSQL(db),
+        PerimetrosSQL(db),
+        pesquisas=RegistroPesquisasSQL(db),
     )
 
 
@@ -78,6 +92,8 @@ def registrar(
 @router.get("", response_model=PaginaResumo)
 def listar(
     servico: Servico,
+    usuario_id: Annotated[Optional[int], Depends(usuario_opcional_id)],
+    busca: Annotated[Optional[str], Query(max_length=BUSCA_MAX)] = None,
     categorias: Annotated[Optional[list[int]], Query()] = None,
     status: Annotated[Optional[list[StatusOcorrencia]], Query()] = None,
     inicio: Optional[datetime] = None,
@@ -93,6 +109,9 @@ def listar(
 
     Sem ``status``, retorna apenas ocorrências ativas. Datas exigem fuso;
     o intervalo é ``[inicio, fim)``. O retângulo exige as quatro bordas.
+    ``busca`` procura o texto no título e na descrição, sem diferenciar
+    maiúsculas, e é gravada para o relatório gerencial (US06) junto com o
+    usuário, se houver token válido.
     """
     valores = {
         "categorias": categorias,
@@ -103,6 +122,7 @@ def listar(
         "oeste": oeste,
         "norte": norte,
         "leste": leste,
+        "busca": busca,
         "limite": limite,
         "offset": offset,
     }
@@ -113,7 +133,7 @@ def listar(
     except ValidationError as exc:
         erros = exc.errors(include_url=False, include_context=False)
         raise RequestValidationError(erros) from exc
-    pagina = servico.consultar(filtro)
+    pagina = servico.consultar(filtro, usuario_id=usuario_id)
     return PaginaResumo(
         itens=[ResumoMapa.de(oc) for oc in pagina.itens],
         proximo_offset=pagina.proximo_offset,
