@@ -11,6 +11,8 @@ from app import models  # noqa: F401 (registra as tabelas no metadata)
 from app.api.routes import auth, categorias, usuarios
 from app.core.exceptions import ErroDominio
 from app.database import Base, engine
+from app.notificacoes.rotas import router as notificacoes_router
+from app.notificacoes.rotas import router_admin as status_admin_router
 from app.ocorrencias.rotas import router as ocorrencias_router
 
 TAGS_METADATA = [
@@ -48,6 +50,20 @@ TAGS_METADATA = [
         "description": (
             "Registro georreferenciado (US01), consulta com filtros espaciais/"
             "bounding box (US02) e detalhamento de ocorrências."
+        ),
+    },
+    {
+        "name": "Notificações (US03)",
+        "description": (
+            "Inscrição em ocorrências ou zonas (raio em metros) e consulta "
+            "das notificações de mudança de status."
+        ),
+    },
+    {
+        "name": "Admin — Status de Ocorrências (US03)",
+        "description": (
+            "Mudança de status pelo administrador, que gera o log de "
+            "eventos usado nas notificações."
         ),
     },
 ]
@@ -107,3 +123,5 @@ app.include_router(usuarios.router)
 app.include_router(categorias.router_admin)
 app.include_router(categorias.router_publico)
 app.include_router(ocorrencias_router)
+app.include_router(notificacoes_router)
+app.include_router(status_admin_router)

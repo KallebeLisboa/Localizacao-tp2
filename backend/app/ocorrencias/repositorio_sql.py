@@ -8,7 +8,7 @@ from shapely.geometry import Point
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from app.models import Categoria, PerimetroAutorizado
+from app.models import Categoria, LogEvento, PerimetroAutorizado
 from app.models import Ocorrencia as OcorrenciaModel
 from app.ocorrencias.filtros import FiltroOcorrencias
 from app.ocorrencias.geo import Ponto
@@ -59,6 +59,16 @@ class RepositorioSQL:
             atualizado_em=nova.criado_em,
         )
         self._db.add(modelo)
+        self._db.flush()
+        # Primeiro evento do histórico: base das notificações de novos registros.
+        self._db.add(
+            LogEvento(
+                ocorrencia_id=modelo.id,
+                status_anterior=None,
+                status_novo=nova.status,
+                registrado_em=nova.criado_em,
+            )
+        )
         self._db.commit()
         self._db.refresh(modelo)
         return _para_dominio(modelo)
