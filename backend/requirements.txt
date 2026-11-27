@@ -16,3 +16,4 @@ black>=24.0.0
 bandit>=1.7.0
 sphinx>=7.0.0
 sphinx-rtd-theme>=2.0.0
+tzdata>=2024.1

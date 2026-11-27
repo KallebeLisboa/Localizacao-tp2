@@ -11,6 +11,7 @@ from app import models  # noqa: F401 (registra as tabelas no metadata)
 from app.api.routes import auth, categorias, usuarios
 from app.core.exceptions import ErroDominio
 from app.database import Base, engine
+from app.estatisticas.rotas import router as estatisticas_router
 from app.notificacoes.rotas import router as notificacoes_router
 from app.notificacoes.rotas import router_admin as status_admin_router
 from app.ocorrencias.rotas import router as ocorrencias_router
@@ -58,6 +59,13 @@ TAGS_METADATA = [
         "description": (
             "Inscrição em ocorrências ou zonas (raio em metros) e consulta "
             "das notificações de mudança de status."
+        ),
+    },
+    {
+        "name": "Estatísticas (US04)",
+        "description": (
+            "Análise temporal e espacial pública: resumo, evolução no tempo, "
+            "regiões, sazonalidade e locais com reincidência."
         ),
     },
     {
@@ -133,4 +141,5 @@ app.include_router(categorias.router_publico)
 app.include_router(ocorrencias_router)
 app.include_router(notificacoes_router)
 app.include_router(status_admin_router)
+app.include_router(estatisticas_router)
 app.include_router(relatorios_router)

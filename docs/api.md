@@ -1,4 +1,4 @@
-# Guia da API — Autenticação, Painel Admin (US05) e Relatório Gerencial (US06)
+# Guia da API — Autenticação, Painel Admin (US05), Estatísticas (US04) e Relatório Gerencial (US06)
 
 Backend em FastAPI sobre o PostgreSQL/PostGIS do projeto
 (`backend/app/database.py`, `backend/app/models.py`). A documentação
@@ -130,6 +130,68 @@ abrir em colunas e com acentos. Cada linha é um valor, com as colunas
 `=`, `+`, `-` ou `@` recebem um apóstrofo na frente, para a planilha não os
 executar como fórmula.
 
+### Estatísticas — US04 (`/estatisticas`)
+Rotas **públicas** (sem token), para os gráficos e o mapa de calor.
+
+| Método | Rota | O que faz |
+|---|---|---|
+| GET | `/estatisticas/resumo` | Totais por status, resolvidas × pendentes e taxa de resolução |
+| GET | `/estatisticas/evolucao` | Quantidade por dia, semana ou mês (série para gráfico de linha) |
+| GET | `/estatisticas/regioes` | Resolvidas × pendentes em cada região cadastrada |
+| GET | `/estatisticas/sazonalidade` | Distribuição por mês do ano, dia da semana ou hora do dia |
+| GET | `/estatisticas/reincidencia` | Locais com ocorrências repetidas (pontos para o mapa de calor) |
+
+Filtros aceitos por todas as rotas (todos opcionais):
+
+| Parâmetro | Para quê |
+|---|---|
+| `inicio` | Início do período, inclusivo. Exige fuso: `2026-11-01T00:00:00-03:00` |
+| `fim` | Fim do período, **exclusivo**. Exige fuso |
+| `regiao_id` | Só ocorrências dentro desta região (`perimetros_autorizados`); 404 se não existir |
+| `categorias` | Só estas categorias; repita o parâmetro: `?categorias=1&categorias=2` |
+
+Parâmetros de cada rota:
+
+| Rota | Parâmetro | Padrão | Valores |
+|---|---|---|---|
+| `evolucao` | `granularidade` | `dia` | `dia`, `semana` (começa na segunda), `mes` |
+| `sazonalidade` | `por` | `mes` | `mes`, `dia_semana` (1 = segunda … 7 = domingo), `hora` |
+| `reincidencia` | `celula_m` | `500` | Lado da célula da grade, de 50 a 50 000 metros |
+| `reincidencia` | `minimo` | `2` | Ocorrências mínimas para um local aparecer |
+| `reincidencia` | `limite` | `50` | Quantos locais devolver (1 a 500) |
+
+Todas as contagens trazem `total`, `resolvidas` e `pendentes`
+(pendentes = registradas + em análise). Detalhes:
+
+- **Fuso:** dia, semana, mês e hora seguem o horário de Brasília
+  (`America/Sao_Paulo`), não o UTC. Uma ocorrência às 23h30 de Brasília conta
+  naquele dia, mesmo já sendo o dia seguinte em UTC.
+- **Sem buracos nos gráficos:** a evolução traz todos os períodos do intervalo
+  (os vazios com zero) e a sazonalidade traz todas as chaves (12 meses, 7 dias
+  ou 24 horas). Sem `inicio`/`fim`, a evolução vai do primeiro ao último
+  período com dados. Séries com mais de 1000 pontos retornam **400**: use uma
+  granularidade maior ou um intervalo menor.
+- **`taxa_resolucao`** (no resumo) vai de 0 a 1, com 4 casas; é `null` quando
+  não há ocorrências.
+- **Regiões:** maior total primeiro; regiões sem ocorrências aparecem com
+  zero; as ocorrências fora de todas as regiões ficam na última linha, com
+  `regiao_id` nulo.
+- **Reincidência:** o PostGIS junta as ocorrências numa grade de células de
+  `celula_m` metros (`ST_SnapToGrid` em metros) e devolve, para cada célula com
+  pelo menos `minimo` ocorrências, o ponto médio (`latitude`, `longitude`) e as
+  contagens. Ordem: maior total primeiro.
+
+Exemplo:
+
+```bash
+curl "http://localhost:8000/estatisticas/evolucao?granularidade=mes&inicio=2026-01-01T00:00:00-03:00"
+```
+
+```json
+{"granularidade": "mes", "fuso": "America/Sao_Paulo",
+ "pontos": [{"periodo": "2026-01-01", "total": 4, "resolvidas": 1, "pendentes": 3}, ...]}
+```
+
 ## Decisões de projeto
 
 - **Administrador:** é o campo `is_admin` do modelo `Usuario`. O cadastro
@@ -143,7 +205,8 @@ executar como fórmula.
 - **Nome de categoria único** sem diferenciar maiúsculas, contando as inativas.
 - **Admin não pode remover o próprio acesso** (`is_admin` ou `ativo`), para o
   sistema não ficar sem administrador.
-- **Datas em UTC**, com `Z` no final.
+- **Datas em UTC**, com `Z` no final. As estatísticas (US04) agrupam por
+  dia, semana, mês e hora no horário de Brasília.
 - **Camadas:** `api/routes` (HTTP) → `services` (regras) → `models` (ORM). Os
   serviços levantam exceções de `app/core/exceptions.py`, que o `main.py`
   converte em HTTP.
@@ -204,3 +267,14 @@ commit que o faz passar (`[GREEN]`).
 11. Teste 15 — gravação em `logs_pesquisa`
 12. Teste 16 — rota com usuário opcional e integração com o relatório
 13. `docs`: busca e gravação das pesquisas
+
+**`feature/us04-estatisticas`** (criada a partir da `feature/us06-relatorio`)
+1. `chore`: pacote `tzdata` (fuso de Brasília também no Windows)
+2. Teste 17 — filtro e modelos das estatísticas
+3. Teste 18 — resumo e regiões (serviço)
+4. Teste 19 — evolução no tempo (serviço)
+5. Teste 20 — sazonalidade e reincidência (serviço)
+6. Teste 21 — contagens por status, região e período no PostGIS
+7. Teste 22 — sazonalidade e reincidência no PostGIS
+8. Teste 23 — rotas `/estatisticas/*`
+9. `docs`: guia com a US04
